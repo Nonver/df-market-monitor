@@ -1,0 +1,251 @@
+<template>
+	<view class="page">
+		<view class="search-bar">
+			<input class="search-input" v-model="keyword" placeholder="搜索子弹名称 / 口径"
+				@confirm="loadData" confirm-type="search" />
+		</view>
+
+		<view class="stat-bar" v-if="stats != null">
+			<view class="stat-item">
+				<text class="stat-label">监控</text>
+				<text class="stat-value">{{ stats.watch_items }}</text>
+			</view>
+			<view class="stat-item">
+				<text class="stat-label">数据点</text>
+				<text class="stat-value">{{ stats.total_ticks }}</text>
+			</view>
+			<view class="stat-item">
+				<text class="stat-label">门槛</text>
+				<text class="stat-value">{{ stats.min_gain_threshold }}%</text>
+			</view>
+			<view class="stat-item">
+				<text class="stat-label">平衡</text>
+				<text class="stat-value">{{ stats.breakeven_12h }}%</text>
+			</view>
+		</view>
+
+		<view class="list">
+			<view class="row" v-for="it in list" :key="it.propid" @click="goDetail(it)">
+				<view class="row-main">
+					<view class="row-name">
+						<text class="name">{{ it.name }}</text>
+						<text class="tag buy" v-if="it.action == 'BUY'">买</text>
+						<text class="tag sell" v-if="it.action == 'SELL'">卖</text>
+					</view>
+					<text class="row-sub">{{ it.caliber }} · {{ it.grade }}</text>
+				</view>
+				<view class="row-right">
+					<text class="price">{{ fmtPrice(it.price) }}</text>
+					<text class="change" :class="getClass(it.change_24h)">{{ fmtChange(it.change_24h) }}</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="empty" v-if="list.length == 0 && !loading">
+			<text>暂无数据</text>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { getMarketList, getStats, fmtPrice, fmtChange } from '@/utils/api.uts'
+
+	export default {
+		data() {
+			return {
+				list: [] as any[],
+				keyword: '',
+				stats: null as any,
+				loading: false
+			}
+		},
+		onLoad() {
+			this.loadData()
+			this.loadStats()
+		},
+		onPullDownRefresh() {
+			this.loadData()
+			this.loadStats()
+		},
+		onShow() {
+			this.loadData()
+		},
+		methods: {
+			async loadData() {
+				this.loading = true
+				try {
+					const res = await getMarketList(this.keyword)
+					if (res.ok) {
+						this.list = res.data as any[]
+					}
+				} catch (e) {
+					uni.showToast({ title: '加载失败', icon: 'none' })
+				}
+				this.loading = false
+				uni.stopPullDownRefresh()
+			},
+			async loadStats() {
+				try {
+					const res = await getStats()
+					if (res.ok) this.stats = res
+				} catch (e) {
+				}
+			},
+			goDetail(it : any) {
+				uni.navigateTo({
+					url: '/pages/detail/detail?propid=' + it.propid + '&name=' +
+						encodeURIComponent(it.name)
+				})
+			},
+			fmtPrice(v : any) : string {
+				return fmtPrice(v)
+			},
+			fmtChange(v : any) : string {
+				return fmtChange(v)
+			},
+			getClass(v : any) : string {
+				if (v == null) return ''
+				if (v > 0) return 'up'
+				if (v < 0) return 'down'
+				return ''
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		background-color: #f5f6f8;
+		min-height: 100vh;
+	}
+
+	.search-bar {
+		padding: 12px 14px;
+		background-color: #ffffff;
+	}
+
+	.search-input {
+		background-color: #f2f3f5;
+		border-radius: 8px;
+		padding: 9px 12px;
+		font-size: 14px;
+	}
+
+	.stat-bar {
+		display: flex;
+		flex-direction: row;
+		background-color: #1e3a5f;
+		padding: 12px 0;
+	}
+
+	.stat-item {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.stat-label {
+		font-size: 11px;
+		color: #9fb3c8;
+	}
+
+	.stat-value {
+		font-size: 16px;
+		color: #ffffff;
+		font-weight: bold;
+		margin-top: 2px;
+	}
+
+	.list {
+		background-color: #ffffff;
+	}
+
+	.row {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 13px 14px;
+		border-bottom-width: 1px;
+		border-bottom-color: #f0f2f5;
+		border-bottom-style: solid;
+	}
+
+	.row-main {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.row-name {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.name {
+		font-size: 15px;
+		color: #1f2329;
+	}
+
+	.tag {
+		font-size: 10px;
+		padding: 1px 5px;
+		border-radius: 3px;
+		margin-left: 6px;
+	}
+
+	.tag.buy {
+		background-color: #fed7d7;
+		color: #9b2c2c;
+	}
+
+	.tag.sell {
+		background-color: #c6f6d5;
+		color: #22543d;
+	}
+
+	.row-sub {
+		font-size: 11px;
+		color: #8a9099;
+		margin-top: 3px;
+	}
+
+	.row-right {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+	}
+
+	.price {
+		font-size: 15px;
+		color: #1f2329;
+		font-weight: bold;
+	}
+
+	.change {
+		font-size: 12px;
+		margin-top: 3px;
+		color: #8a9099;
+	}
+
+	.change.up {
+		color: #c53030;
+	}
+
+	.change.down {
+		color: #276749;
+	}
+
+	.empty {
+		padding: 60px 0;
+		display: flex;
+		justify-content: center;
+	}
+
+	.empty text {
+		color: #8a9099;
+		font-size: 14px;
+	}
+</style>

@@ -1,0 +1,14 @@
+# 三角洲交易行子弹价格监控平台 - 后端依赖
+# 安装：pip install -r requirements.txt
+# Python >= 3.10
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pymysql>=1.1.0
+sqlalchemy>=2.0
+apscheduler>=3.10
+cryptography>=42.0        # 凭证 AES 加密（Fernet）
+pyjwt>=2.8                # 管理后台登录令牌
+passlib[bcrypt]>=1.7.4    # 密码哈希
+python-multipart>=0.0.9   # 表单提交
+requests>=2.31            # 调用官方 AMS 接口

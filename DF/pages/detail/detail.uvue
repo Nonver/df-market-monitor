@@ -1,0 +1,436 @@
+<template>
+	<view class="page">
+		<view class="head">
+			<text class="title">{{ name }}</text>
+			<text class="sub">{{ caliber }} · {{ grade }}</text>
+			<view class="price-row">
+				<text class="price">{{ fmtPrice(current) }}</text>
+				<text class="change" :class="getClass(change24)">{{ fmtChange(change24) }}</text>
+			</view>
+			<text class="hint-text">近 24 小时涨跌</text>
+		</view>
+
+		<view class="signal-box" v-if="signal != null">
+			<view class="signal-head">
+				<text class="signal-action" :class="signal.action.toLowerCase()">{{ actionText }}</text>
+				<text class="signal-score" v-if="signal.score > 0">强度 {{ signal.score }}</text>
+			</view>
+			<text class="signal-reason">{{ signal.reason }}</text>
+		</view>
+
+		<view class="panel">
+			<view class="panel-head">
+				<text class="panel-title">价格走势</text>
+				<view class="range-bar">
+					<text class="range-item" :class="{ active: range == 24 }" @click="switchRange(24)">24h</text>
+					<text class="range-item" :class="{ active: range == 168 }" @click="switchRange(168)">7d</text>
+					<text class="range-item" :class="{ active: range == 720 }" @click="switchRange(720)">30d</text>
+				</view>
+			</view>
+			<canvas canvas-id="chart" id="chart" class="chart"></canvas>
+		</view>
+
+		<view class="panel" v-if="suggest != null">
+			<text class="panel-title">挂单建议（{{ suggest.duration }} 小时档）</text>
+			<view class="suggest-row">
+				<text class="s-label">建议挂单价</text>
+				<text class="s-value">{{ fmtPrice(suggest.suggest_price) }}</text>
+			</view>
+			<view class="suggest-row">
+				<text class="s-label">卖出到手</text>
+				<text class="s-value">{{ fmtPrice(suggest.net_proceeds) }}</text>
+			</view>
+			<view class="suggest-row">
+				<text class="s-label">盈亏平衡涨幅</text>
+				<text class="s-value warn">{{ suggest.breakeven_gain }}%</text>
+			</view>
+			<text class="hint-text">已扣除 3% 保证金 + {{ suggest.duration == 12 ? 5 : 8 }}% 手续费</text>
+		</view>
+
+		<view class="btns">
+			<button class="btn" @click="addToWatch">加入自选</button>
+			<button class="btn primary" @click="recordBuy">记一笔买入</button>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { getHistory, getSuggest, getOpportunities, addWatch, addHolding,
+		fmtPrice, fmtChange, login } from '@/utils/api.uts'
+
+	export default {
+		data() {
+			return {
+				propid: '',
+				name: '',
+				caliber: '',
+				grade: '',
+				current: null as any,
+				change24: null as any,
+				points: [] as any[],
+				signal: null as any,
+				suggest: null as any,
+				range: 168
+			}
+		},
+		onLoad(opt : any) {
+			this.propid = opt.propid
+			this.name = decodeURIComponent(opt.name || '')
+			this.loadAll()
+		},
+		methods: {
+			async loadAll() {
+				await this.loadHistory()
+				await this.loadSignal()
+				await this.loadSuggest()
+			},
+			async loadHistory() {
+				try {
+					const res = await getHistory(this.propid, this.range)
+					if (res.ok && res.data.length > 0) {
+						this.points = res.data as any[]
+						const last = this.points[this.points.length - 1] as any
+						this.current = last.price
+						const old = this.points[0] as any
+						if (old.price > 0) {
+							this.change24 = (last.price - old.price) / old.price * 100
+						}
+						this.drawChart()
+					}
+				} catch (e) {
+				}
+			},
+			async loadSignal() {
+				try {
+					const res = await getOpportunities()
+					if (res.ok) {
+						const arr = res.data as any[]
+						for (let i = 0; i < arr.length; i++) {
+							if (arr[i].propid == this.propid) {
+								this.signal = arr[i]
+								this.caliber = arr[i].caliber || ''
+								this.grade = arr[i].grade || ''
+								break
+							}
+						}
+					}
+				} catch (e) {
+				}
+			},
+			async loadSuggest() {
+				try {
+					const res = await getSuggest(this.propid, 12)
+					if (res.ok) this.suggest = res
+				} catch (e) {
+				}
+			},
+			switchRange(r : number) {
+				this.range = r
+				this.loadHistory()
+			},
+			drawChart() {
+				const pts = this.points
+				if (pts.length < 2) return
+				const ctx = uni.createCanvasContext('chart', this)
+				const W = 340
+				const H = 180
+				const padL = 46
+				const padB = 22
+				const padT = 10
+				const padR = 8
+
+				let min = 999999999
+				let max = 0
+				for (let i = 0; i < pts.length; i++) {
+					const v = Number((pts[i] as any).price)
+					if (v < min) min = v
+					if (v > max) max = v
+				}
+				if (max == min) { max = max + 1 }
+				const span = max - min
+
+				ctx.clearRect(0, 0, W, H)
+
+				// 网格
+				ctx.setStrokeStyle('#f0f2f5')
+				ctx.setLineWidth(1)
+				for (let g = 0; g <= 3; g++) {
+					const y = padT + (H - padT - padB) * g / 3
+					ctx.beginPath()
+					ctx.moveTo(padL, y)
+					ctx.lineTo(W - padR, y)
+					ctx.stroke()
+				}
+
+				// Y 轴标签
+				ctx.setFillStyle('#8a9099')
+				ctx.setFontSize(9)
+				for (let g = 0; g <= 3; g++) {
+					const y = padT + (H - padT - padB) * g / 3
+					const v = max - span * g / 3
+					ctx.fillText(String(Math.round(v)), 2, y + 3)
+				}
+
+				// 折线
+				const n = pts.length
+				const step = (W - padL - padR) / (n - 1)
+				ctx.beginPath()
+				ctx.setStrokeStyle('#2c5282')
+				ctx.setLineWidth(1.5)
+				for (let i = 0; i < n; i++) {
+					const v = Number((pts[i] as any).price)
+					const x = padL + step * i
+					const y = padT + (H - padT - padB) * (1 - (v - min) / span)
+					if (i == 0) ctx.moveTo(x, y)
+					else ctx.lineTo(x, y)
+				}
+				ctx.stroke()
+
+				// 填充
+				ctx.lineTo(padL + step * (n - 1), H - padB)
+				ctx.lineTo(padL, H - padB)
+				ctx.closePath()
+				ctx.setFillStyle('rgba(44,82,130,0.08)')
+				ctx.fill()
+
+				// 首尾标注
+				ctx.setFillStyle('#8a9099')
+				ctx.setFontSize(9)
+				const s0 = String((pts[0] as any).stat_hour)
+				const s1 = String((pts[n - 1] as any).stat_hour)
+				ctx.fillText(s0.slice(4, 8), padL, H - 6)
+				ctx.fillText(s1.slice(4, 8), W - padR - 34, H - 6)
+
+				ctx.draw()
+			},
+			async addToWatch() {
+				try {
+					const uid = await this.getUserId()
+					await addWatch(uid, this.propid)
+					uni.showToast({ title: '已加入自选', icon: 'success' })
+				} catch (e) {
+					uni.showToast({ title: '操作失败', icon: 'none' })
+				}
+			},
+			async recordBuy() {
+				const that = this
+				uni.showModal({
+					title: '记录买入',
+					content: '按当前价 ' + fmtPrice(this.current) + ' 记一笔？',
+					editable: true,
+					placeholderText: '输入买入单价',
+					success: async function (r : any) {
+						if (r.confirm) {
+							const price = Number(r.content)
+							if (price > 0) {
+								try {
+									const uid = await that.getUserId()
+									await addHolding(uid, that.propid, price, 1)
+									uni.showToast({ title: '已记录', icon: 'success' })
+								} catch (e) {
+									uni.showToast({ title: '记录失败', icon: 'none' })
+								}
+							}
+						}
+					}
+				})
+			},
+			async getUserId() : Promise<number> {
+				let uid = uni.getStorageSync('user_id')
+				if (uid) return Number(uid)
+				const did = uni.getStorageSync('device_id')
+				const openid = did ? String(did) : 'dev_' + Date.now()
+				if (!did) uni.setStorageSync('device_id', openid)
+				const res = await login(openid, '干员')
+				if (res.ok) {
+					uni.setStorageSync('user_id', res.user_id)
+					return Number(res.user_id)
+				}
+				return 0
+			},
+			fmtPrice(v : any) : string { return fmtPrice(v) },
+			fmtChange(v : any) : string { return fmtChange(v) },
+			getClass(v : any) : string {
+				if (v == null) return ''
+				if (v > 0) return 'up'
+				if (v < 0) return 'down'
+				return ''
+			}
+		},
+		computed: {
+			actionText() : string {
+				if (this.signal == null) return ''
+				const a = this.signal.action
+				if (a == 'BUY') return '买入机会'
+				if (a == 'SELL') return '卖出时机'
+				return '观望'
+			}
+		}
+	}
+</script>
+
+<style>
+	.page {
+		background-color: #f5f6f8;
+		min-height: 100vh;
+		padding-bottom: 30px;
+	}
+
+	.head {
+		background-color: #1e3a5f;
+		padding: 18px 16px 20px;
+	}
+
+	.title {
+		font-size: 18px;
+		color: #ffffff;
+		font-weight: bold;
+	}
+
+	.sub {
+		font-size: 12px;
+		color: #9fb3c8;
+		margin-top: 4px;
+	}
+
+	.price-row {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		margin-top: 12px;
+	}
+
+	.price {
+		font-size: 26px;
+		color: #ffffff;
+		font-weight: bold;
+	}
+
+	.change {
+		font-size: 14px;
+		margin-left: 10px;
+		color: #9fb3c8;
+	}
+
+	.change.up { color: #fc8181; }
+	.change.down { color: #68d391; }
+
+	.hint-text {
+		font-size: 11px;
+		color: #8a9099;
+		margin-top: 4px;
+	}
+
+	.signal-box {
+		background-color: #ffffff;
+		margin: 10px;
+		padding: 14px;
+		border-radius: 8px;
+	}
+
+	.signal-head {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.signal-action {
+		font-size: 14px;
+		font-weight: bold;
+		color: #4a5568;
+	}
+
+	.signal-action.buy { color: #c53030; }
+	.signal-action.sell { color: #276749; }
+
+	.signal-score {
+		font-size: 12px;
+		color: #8a9099;
+		margin-left: 10px;
+	}
+
+	.signal-reason {
+		font-size: 12px;
+		color: #4a5568;
+		margin-top: 8px;
+		line-height: 18px;
+	}
+
+	.panel {
+		background-color: #ffffff;
+		margin: 10px;
+		padding: 14px;
+		border-radius: 8px;
+	}
+
+	.panel-head {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.panel-title {
+		font-size: 14px;
+		font-weight: bold;
+		color: #1f2329;
+	}
+
+	.range-bar {
+		display: flex;
+		flex-direction: row;
+	}
+
+	.range-item {
+		font-size: 12px;
+		color: #8a9099;
+		padding: 3px 8px;
+		margin-left: 4px;
+		border-radius: 4px;
+		background-color: #f2f3f5;
+	}
+
+	.range-item.active {
+		background-color: #2c5282;
+		color: #ffffff;
+	}
+
+	.chart {
+		width: 340px;
+		height: 180px;
+	}
+
+	.suggest-row {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		padding: 8px 0;
+		border-bottom-width: 1px;
+		border-bottom-color: #f0f2f5;
+		border-bottom-style: solid;
+	}
+
+	.s-label { font-size: 13px; color: #4a5568; }
+	.s-value { font-size: 13px; color: #1f2329; font-weight: bold; }
+	.s-value.warn { color: #c05621; }
+
+	.btns {
+		display: flex;
+		flex-direction: row;
+		padding: 16px 10px;
+	}
+
+	.btn {
+		flex: 1;
+		margin: 0 5px;
+		font-size: 14px;
+		background-color: #ffffff;
+		color: #2c5282;
+	}
+
+	.btn.primary {
+		background-color: #2c5282;
+		color: #ffffff;
+	}
+</style>

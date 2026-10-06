@@ -1,0 +1,137 @@
+// 接口封装
+// 开发环境下把 127.0.0.1 换成你电脑的局域网 IP，手机才能访问
+// 例：const BASE_URL : string = 'http://192.168.1.100:8765'
+
+const BASE_URL : string = 'http://127.0.0.1:8765'
+
+export function apiGet(path : string) : Promise<any> {
+	return new Promise((resolve, reject) => {
+		uni.request({
+			url: BASE_URL + path,
+			method: 'GET',
+			timeout: 15000,
+			success: (res : any) => {
+				resolve(res.data)
+			},
+			fail: (err : any) => {
+				reject(err)
+			}
+		})
+	})
+}
+
+export function apiPost(path : string, data : any) : Promise<any> {
+	return new Promise((resolve, reject) => {
+		uni.request({
+			url: BASE_URL + path,
+			method: 'POST',
+			data: data,
+			header: { 'Content-Type': 'application/json' },
+			timeout: 15000,
+			success: (res : any) => {
+				resolve(res.data)
+			},
+			fail: (err : any) => {
+				reject(err)
+			}
+		})
+	})
+}
+
+// 行情列表
+export function getMarketList(keyword : string) : Promise<any> {
+	let p = '/api/market/list'
+	if (keyword.length > 0) {
+		p = p + '?keyword=' + encodeURIComponent(keyword)
+	}
+	return apiGet(p)
+}
+
+// 历史价格
+export function getHistory(propid : string, hours : number) : Promise<any> {
+	return apiGet('/api/market/' + propid + '/history?hours=' + hours)
+}
+
+// 日内基准
+export function getBaseline(propid : string) : Promise<any> {
+	return apiGet('/api/market/' + propid + '/baseline')
+}
+
+// 挂单建议
+export function getSuggest(propid : string, duration : number) : Promise<any> {
+	return apiGet('/api/market/' + propid + '/suggest?duration=' + duration)
+}
+
+// 买入机会
+export function getOpportunities() : Promise<any> {
+	return apiGet('/api/signal/opportunities')
+}
+
+// 系统统计
+export function getStats() : Promise<any> {
+	return apiGet('/api/stats')
+}
+
+// 登录
+export function login(openid : string, nickname : string) : Promise<any> {
+	return apiPost('/api/auth/login', { openid: openid, nickname: nickname })
+}
+
+// 持仓列表
+export function getHoldings(userId : number) : Promise<any> {
+	return apiGet('/api/holding?user_id=' + userId)
+}
+
+// 新增持仓
+export function addHolding(userId : number, propid : string, buyPrice : number,
+	quantity : number) : Promise<any> {
+	return apiPost('/api/holding', {
+		user_id: userId, propid: propid, buy_price: buyPrice, quantity: quantity
+	})
+}
+
+// 挂单
+export function listHolding(id : number, price : number, duration : number) : Promise<any> {
+	return apiPost('/api/holding/' + id + '/list', { list_price: price, duration: duration })
+}
+
+// 卖出
+export function sellHolding(id : number, price : number, duration : number) : Promise<any> {
+	return apiPost('/api/holding/' + id + '/sell', { sell_price: price, duration: duration })
+}
+
+// 删除持仓
+export function delHolding(id : number) : Promise<any> {
+	return new Promise((resolve, reject) => {
+		uni.request({
+			url: BASE_URL + '/api/holding/' + id,
+			method: 'DELETE',
+			success: (res : any) => resolve(res.data),
+			fail: (err : any) => reject(err)
+		})
+	})
+}
+
+// 自选
+export function getWatch(userId : number) : Promise<any> {
+	return apiGet('/api/watch?user_id=' + userId)
+}
+
+export function addWatch(userId : number, propid : string) : Promise<any> {
+	return apiPost('/api/watch', { user_id: userId, propid: propid })
+}
+
+// 格式化价格
+export function fmtPrice(v : any) : string {
+	if (v == null) return '-'
+	const n = Number(v)
+	return n.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+// 格式化涨跌
+export function fmtChange(v : any) : string {
+	if (v == null) return '-'
+	const n = Number(v)
+	if (n > 0) return '+' + n.toFixed(2) + '%'
+	return n.toFixed(2) + '%'
+}

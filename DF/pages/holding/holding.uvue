@@ -1,0 +1,279 @@
+<template>
+	<view class="page">
+		<view class="sum" v-if="list.length > 0">
+			<view class="sum-col">
+				<text class="sum-label">持仓数</text>
+				<text class="sum-value">{{ list.length }}</text>
+			</view>
+			<view class="sum-col">
+				<text class="sum-label">合计成本</text>
+				<text class="sum-value">{{ fmtPrice(totalCost) }}</text>
+			</view>
+			<view class="sum-col">
+				<text class="sum-label">预计净收益 {{ (totalRate >= 0 ? '+' : '') + totalRate.toFixed(1) }}%</text>
+				<text class="sum-value" :class="totalNet >= 0 ? 'up' : 'down'">{{ (totalNet >= 0 ? '+' : '') + fmtPrice(totalNet) }}</text>
+			</view>
+		</view>
+
+		<view class="list">
+			<view class="card" v-for="it in list" :key="it.id">
+				<view class="card-head">
+					<text class="name">{{ it.name }}</text>
+					<text class="status" :class="it.status">{{ statusText(it.status) }}</text>
+				</view>
+				<view class="grid">
+					<view class="cell">
+						<text class="label">买入价</text>
+						<text class="value">{{ fmtPrice(it.buy_price) }}</text>
+					</view>
+					<view class="cell">
+						<text class="label">当前价</text>
+						<text class="value">{{ fmtPrice(it.current_price) }}</text>
+					</view>
+					<view class="cell">
+						<text class="label">毛涨幅</text>
+						<text class="value" :class="getClass(it.gross_profit_pct)">{{ fmtChange(it.gross_profit_pct) }}</text>
+					</view>
+					<view class="cell">
+						<text class="label">扣费后净利</text>
+						<text class="value" :class="getClass(it.net_profit_if_sell)">{{ fmtPrice(it.net_profit_if_sell) }}</text>
+					</view>
+				</view>
+				<view class="ops">
+					<text class="op" @click="doList(it)">挂单</text>
+					<text class="op" @click="doSell(it)">卖出</text>
+					<text class="op del" @click="doDel(it)">删除</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="empty" v-if="list.length == 0">
+			<text>还没有持仓记录</text>
+			<text class="empty-sub">在行情页选一发子弹，点「记一笔买入」</text>
+		</view>
+
+		<view class="foot">
+			<button class="btn-add" @click="showAdd">+ 记一笔买入</button>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { getHoldings, addHolding, listHolding, sellHolding, delHolding,
+		getMarketList, login, fmtPrice, fmtChange } from '@/utils/api.uts'
+
+	export default {
+		data() {
+			return {
+				list: [] as any[],
+				allItems: [] as any[],
+				uid: 0
+			}
+		},
+		onLoad() {
+			this.init()
+		},
+		onShow() {
+			this.load()
+		},
+		methods: {
+			async init() {
+				this.uid = await this.getUserId()
+				await this.load()
+				const m = await getMarketList('')
+				if (m.ok) this.allItems = m.data as any[]
+			},
+			async load() {
+				if (this.uid == 0) return
+				try {
+					const res = await getHoldings(this.uid)
+					if (res.ok) this.list = res.data as any[]
+				} catch (e) {
+				}
+			},
+			async getUserId() : Promise<number> {
+				let uid = uni.getStorageSync('user_id')
+				if (uid) return Number(uid)
+				let did = uni.getStorageSync('device_id')
+				if (!did) {
+					did = 'dev_' + Date.now()
+					uni.setStorageSync('device_id', did)
+				}
+				const res = await login(String(did), '干员')
+				if (res.ok) {
+					uni.setStorageSync('user_id', res.user_id)
+					return Number(res.user_id)
+				}
+				return 0
+			},
+			showAdd() {
+				const that = this
+				const names = [] as string[]
+				for (let i = 0; i < this.allItems.length; i++) {
+					names.push((this.allItems[i] as any).name)
+				}
+				uni.showActionSheet({
+					itemList: names.slice(0, 20),
+					success: async function (r : any) {
+						const item = that.allItems[r.tapIndex] as any
+						uni.showModal({
+							title: '买入 ' + item.name,
+							content: '参考当前价 ' + fmtPrice(item.price),
+							editable: true,
+							placeholderText: '输入买入单价',
+							success: async function (m : any) {
+								if (m.confirm) {
+									const p = Number(m.content)
+									if (p > 0) {
+										await addHolding(that.uid, item.propid, p, 1)
+										uni.showToast({ title: '已记录', icon: 'success' })
+										that.load()
+									}
+								}
+							}
+						})
+					},
+					fail: function () {}
+				})
+			},
+			doList(it : any) {
+				const that = this
+				uni.showModal({
+					title: '挂单',
+					editable: true,
+					placeholderText: '挂单价',
+					success: async function (r : any) {
+						if (r.confirm) {
+							const p = Number(r.content)
+							if (p > 0) {
+								await listHolding(it.id, p, 12)
+								uni.showToast({ title: '已挂单', icon: 'success' })
+								that.load()
+							}
+						}
+					}
+				})
+			},
+			doSell(it : any) {
+				const that = this
+				uni.showModal({
+					title: '卖出',
+					content: '扣 3% 保证金 + 5% 手续费（12小时档）',
+					editable: true,
+					placeholderText: '成交单价',
+					success: async function (r : any) {
+						if (r.confirm) {
+							const p = Number(r.content)
+							if (p > 0) {
+								const res = await sellHolding(it.id, p, 12)
+								uni.showToast({
+									title: '净收益 ' + fmtPrice(res.net_profit),
+									icon: 'success'
+								})
+								that.load()
+							}
+						}
+					}
+				})
+			},
+			doDel(it : any) {
+				const that = this
+				uni.showModal({
+					title: '删除这条持仓？',
+					success: async function (r : any) {
+						if (r.confirm) {
+							await delHolding(it.id)
+							that.load()
+						}
+					}
+				})
+			},
+			statusText(s : string) : string {
+				if (s == 'holding') return '持有中'
+				if (s == 'listed') return '已挂单'
+				if (s == 'sold') return '已卖出'
+				return s
+			},
+			fmtPrice(v : any) : string { return fmtPrice(v) },
+			fmtChange(v : any) : string { return fmtChange(v) },
+			getClass(v : any) : string {
+				if (v == null) return ''
+				if (v > 0) return 'up'
+				if (v < 0) return 'down'
+				return ''
+			}
+		},
+		computed: {
+			totalCost() : number {
+				let t = 0
+				for (let i = 0; i < this.list.length; i++) {
+					const it = this.list[i] as any
+					if (it.status != 'sold') t = t + Number(it.buy_price) * Number(it.quantity)
+				}
+				return t
+			},
+			totalNet() : number {
+				// net_profit_if_sell 是「每发」净收益，必须乘以持仓数量
+				let t = 0
+				for (let i = 0; i < this.list.length; i++) {
+					const it = this.list[i] as any
+					if (it.status != 'sold') {
+						t = t + Number(it.net_profit_if_sell || 0) * Number(it.quantity || 0)
+					}
+				}
+				return t
+			},
+			totalRate() : number {
+				if (this.totalCost <= 0) return 0
+				return this.totalNet / this.totalCost * 100
+			}
+		}
+	}
+</script>
+
+<style>
+	.page { background-color: #f5f6f8; min-height: 100vh; padding-bottom: 70px; }
+
+	.sum {
+		display: flex; flex-direction: row; background-color: #1e3a5f; padding: 14px 0;
+	}
+	.sum-col { flex: 1; display: flex; flex-direction: column; align-items: center; }
+	.sum-label { font-size: 11px; color: #9fb3c8; }
+	.sum-value { font-size: 16px; color: #ffffff; font-weight: bold; margin-top: 3px; }
+	.sum-value.up { color: #fc8181; }
+	.sum-value.down { color: #68d391; }
+
+	.list { padding: 10px; }
+	.card {
+		background-color: #ffffff; border-radius: 8px; padding: 14px; margin-bottom: 10px;
+	}
+	.card-head {
+		display: flex; flex-direction: row; justify-content: space-between; align-items: center;
+	}
+	.name { font-size: 15px; font-weight: bold; color: #1f2329; }
+	.status { font-size: 11px; color: #8a9099; background-color: #f2f3f5; padding: 2px 8px; border-radius: 10px; }
+	.status.listed { color: #975a16; background-color: #fffaf0; }
+	.status.sold { color: #22543d; background-color: #f0fff4; }
+
+	.grid { display: flex; flex-direction: row; margin-top: 12px; flex-wrap: wrap; }
+	.cell { width: 50%; display: flex; flex-direction: column; margin-bottom: 8px; }
+	.label { font-size: 11px; color: #8a9099; }
+	.value { font-size: 14px; color: #1f2329; font-weight: bold; margin-top: 2px; }
+	.value.up { color: #c53030; }
+	.value.down { color: #276749; }
+
+	.ops {
+		display: flex; flex-direction: row; justify-content: flex-end;
+		border-top-width: 1px; border-top-color: #f0f2f5; border-top-style: solid;
+		padding-top: 10px; margin-top: 4px;
+	}
+	.op { font-size: 13px; color: #2c5282; margin-left: 18px; }
+	.op.del { color: #c53030; }
+
+	.empty { padding: 70px 0; display: flex; flex-direction: column; align-items: center; }
+	.empty text { color: #8a9099; font-size: 14px; }
+	.empty-sub { font-size: 12px; margin-top: 6px; }
+
+	.foot { padding: 12px; }
+	.btn-add { background-color: #2c5282; color: #ffffff; font-size: 15px; }
+</style>

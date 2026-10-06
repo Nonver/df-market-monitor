@@ -1,0 +1,119 @@
+<template>
+	<view class="page">
+		<view class="hero">
+			<text class="hero-title">三角洲子弹监控</text>
+			<text class="hero-sub">{{ stats.watch_items }} 种子弹 · {{ stats.total_ticks }} 个数据点</text>
+		</view>
+
+		<view class="panel">
+			<text class="panel-title">成本结构（S9 赛季）</text>
+			<view class="row">
+				<text class="label">保证金</text>
+				<text class="value warn">3%（上架即扣，流拍不退）</text>
+			</view>
+			<view class="row">
+				<text class="label">手续费 12 小时档</text>
+				<text class="value">5%</text>
+			</view>
+			<view class="row">
+				<text class="label">手续费 24 小时档</text>
+				<text class="value">8%</text>
+			</view>
+			<view class="row">
+				<text class="label">盈亏平衡涨幅</text>
+				<text class="value warn">{{ stats.breakeven_12h }}% / {{ stats.breakeven_24h }}%</text>
+			</view>
+			<view class="row">
+				<text class="label">策略收益门槛</text>
+				<text class="value">{{ stats.min_gain_threshold }}%</text>
+			</view>
+			<text class="hint">低于门槛的波动不做——扣完成本剩不下什么，还要承担流拍风险。</text>
+		</view>
+
+		<view class="panel">
+			<text class="panel-title">为什么只做子弹</text>
+			<text class="para">交易行里，枪械、护甲、配件、钥匙买了即绑定，无法再次上架。
+只有可堆叠的弹药因技术原因不绑定，能反复低买高卖——这是游戏里几乎唯一能做搬砖套利的品类。</text>
+		</view>
+
+		<view class="panel">
+			<text class="panel-title">数据来源</text>
+			<view class="row">
+				<text class="label">当前数据源</text>
+				<text class="value">{{ sourceText }}</text>
+			</view>
+			<view class="row">
+				<text class="label">最新时段</text>
+				<text class="value">{{ stats.latest_hour || '-' }}</text>
+			</view>
+			<text class="hint">价格数据由服务端统一采集后下发，所有用户共享同一份，请求量与人数无关。</text>
+		</view>
+
+		<view class="panel">
+			<text class="panel-title">免责声明</text>
+			<text class="para">本工具仅作个人决策参考，价格以游戏内实际为准。
+游戏数据版权归腾讯所有。严禁将哈夫币兑换真实货币（RMT），官方对此严厉打击。</text>
+		</view>
+	</view>
+</template>
+
+<script lang="uts">
+	import { getStats } from '@/utils/api.uts'
+
+	export default {
+		data() {
+			return {
+				stats: {} as any
+			}
+		},
+		onLoad() {
+			this.load()
+		},
+		onShow() {
+			this.load()
+		},
+		methods: {
+			async load() {
+				try {
+					const res = await getStats()
+					if (res.ok) this.stats = res
+				} catch (e) {
+				}
+			}
+		},
+		computed: {
+			sourceText() : string {
+				if (this.stats.total_ticks == 0) return '暂无数据'
+				return '官方接口 / 演示数据'
+			}
+		}
+	}
+</script>
+
+<style>
+	.page { background-color: #f5f6f8; min-height: 100vh; padding-bottom: 24px; }
+
+	.hero {
+		background-color: #1e3a5f; padding: 24px 16px 26px;
+		display: flex; flex-direction: column;
+	}
+	.hero-title { font-size: 20px; color: #ffffff; font-weight: bold; }
+	.hero-sub { font-size: 12px; color: #9fb3c8; margin-top: 6px; }
+
+	.panel {
+		background-color: #ffffff; margin: 10px; padding: 14px; border-radius: 8px;
+	}
+	.panel-title { font-size: 14px; font-weight: bold; color: #1f2329; margin-bottom: 10px; }
+
+	.row {
+		display: flex; flex-direction: row; justify-content: space-between;
+		padding: 8px 0; border-bottom-width: 1px; border-bottom-color: #f0f2f5;
+		border-bottom-style: solid;
+	}
+	.label { font-size: 13px; color: #4a5568; }
+	.value { font-size: 13px; color: #1f2329; font-weight: bold; }
+	.value.warn { color: #c05621; }
+
+	.hint { font-size: 11px; color: #8a9099; margin-top: 10px; line-height: 16px; }
+	.para { font-size: 13px; color: #4a5568; line-height: 20px; }
+</style>
